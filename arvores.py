@@ -117,3 +117,164 @@ def montar_arvore_avl(filmes, chave=lambda f: f.codigo):
     for filme in filmes:
         arvore.inserir(filme)
     return arvore
+
+
+VERMELHO = "vermelho"
+PRETO = "preto"
+
+
+class NoRN:
+    def __init__(self, filme, pai=None):
+        self.filmes = [filme]
+        self.esquerda = None
+        self.direita = None
+        self.pai = pai
+        self.cor = VERMELHO  # todo nó novo entra vermelho (RB-insert, linha 23)
+
+
+def _cor(no):
+    # folha (None) faz o papel do sentinela nil[T], que é sempre preto
+    return no.cor if no is not None else PRETO
+
+
+def _altura_recursiva(no):
+    if no is None:
+        return 0
+    return 1 + max(_altura_recursiva(no.esquerda), _altura_recursiva(no.direita))
+
+
+class ArvoreRubroNegra(ArvoreBusca):
+    """Árvore rubro-negra (Cormen et al., cap. 13).
+
+    Propriedades:
+      1. todo nó é vermelho ou preto;
+      2. a raiz é preta;
+      3. toda folha (nil) é preta;
+      4. se um nó é vermelho, os dois filhos são pretos;
+      5. todos os caminhos de um nó até as folhas têm o mesmo nº de nós pretos.
+
+    No lugar do sentinela nil[T] usamos None, tratado como preto (_cor).
+    Assim buscar() e buscar_por_trecho() herdados de ArvoreBusca funcionam
+    sem mudança.
+    """
+
+    def __init__(self, chave=lambda f: f.codigo):
+        super().__init__(chave=chave)
+        self.comparacoes_insercao = 0
+        self.rotacoes = 0
+        self.recoloracoes = 0
+
+    def altura(self):
+        return _altura_recursiva(self.raiz)
+
+    def _pintar(self, no, cor):
+        if no.cor != cor:
+            no.cor = cor
+            self.recoloracoes += 1
+
+    # ---------------- rotações ----------------
+
+    def _left_rotate(self, x):
+        y = x.direita
+        x.direita = y.esquerda
+        if y.esquerda is not None:
+            y.esquerda.pai = x
+        y.pai = x.pai
+        if x.pai is None:
+            self.raiz = y
+        elif x is x.pai.esquerda:
+            x.pai.esquerda = y
+        else:
+            x.pai.direita = y
+        y.esquerda = x
+        x.pai = y
+        self.rotacoes += 1
+
+    def _right_rotate(self, y):
+        x = y.esquerda
+        y.esquerda = x.direita
+        if x.direita is not None:
+            x.direita.pai = y
+        x.pai = y.pai
+        if y.pai is None:
+            self.raiz = x
+        elif y is y.pai.direita:
+            y.pai.direita = x
+        else:
+            y.pai.esquerda = x
+        x.direita = y
+        y.pai = x
+        self.rotacoes += 1
+
+    # ---------------- inserção ----------------
+
+    def inserir(self, filme):
+        chave_filme = self.chave(filme)
+        y = None
+        x = self.raiz
+        while x is not None:
+            self.comparacoes_insercao += 1
+            y = x
+            chave_x = self.chave(x.filmes[0])
+            if chave_filme < chave_x:
+                x = x.esquerda
+            elif chave_filme > chave_x:
+                x = x.direita
+            else:
+                x.filmes.append(filme)  # chave repetida: nenhuma propriedade muda
+                return
+
+        z = NoRN(filme, pai=y)
+        if y is None:
+            self.raiz = z
+        elif chave_filme < self.chave(y.filmes[0]):
+            y.esquerda = z
+        else:
+            y.direita = z
+
+        self._inserir_fixup(z)
+
+    def _inserir_fixup(self, z):
+        while _cor(z.pai) == VERMELHO:
+            avo = z.pai.pai  # existe: pai vermelho não pode ser a raiz
+            if z.pai is avo.esquerda:
+                y = avo.direita  # tio
+                if _cor(y) == VERMELHO:
+                    # caso 1: tio vermelho -> recolore e sobe dois níveis
+                    self._pintar(z.pai, PRETO)
+                    self._pintar(y, PRETO)
+                    self._pintar(avo, VERMELHO)
+                    z = avo
+                else:
+                    if z is z.pai.direita:
+                        # caso 2: tio preto e z filho direito -> vira caso 3
+                        z = z.pai
+                        self._left_rotate(z)
+                    # caso 3: tio preto e z filho esquerdo
+                    self._pintar(z.pai, PRETO)
+                    self._pintar(z.pai.pai, VERMELHO)
+                    self._right_rotate(z.pai.pai)
+            else:
+                # espelho: troca esquerda <-> direita
+                y = avo.esquerda
+                if _cor(y) == VERMELHO:
+                    self._pintar(z.pai, PRETO)
+                    self._pintar(y, PRETO)
+                    self._pintar(avo, VERMELHO)
+                    z = avo
+                else:
+                    if z is z.pai.esquerda:
+                        z = z.pai
+                        self._right_rotate(z)
+                    self._pintar(z.pai, PRETO)
+                    self._pintar(z.pai.pai, VERMELHO)
+                    self._left_rotate(z.pai.pai)
+
+        self._pintar(self.raiz, PRETO)
+
+
+def montar_arvore_rubro_negra(filmes, chave=lambda f: f.codigo):
+    arvore = ArvoreRubroNegra(chave=chave)
+    for filme in filmes:
+        arvore.inserir(filme)
+    return arvore

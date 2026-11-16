@@ -3,7 +3,14 @@ import random
 import unittest
 
 from filmes import Filme
-from arvores import ArvoreAVL, montar_arvore_avl
+from arvores import (
+    ArvoreAVL,
+    montar_arvore_avl,
+    ArvoreRubroNegra,
+    montar_arvore_rubro_negra,
+    VERMELHO,
+    PRETO,
+)
 
 
 def gerar_filmes(n, semente=42):
@@ -149,6 +156,177 @@ class TestArvoreAVL(unittest.TestCase):
         self.assertEqual(encontrados, esperado)
         encontrados, _ = arvore.buscar_por_trecho("filme 1", limite=5)
         self.assertEqual(len(encontrados), 5)
+
+
+def estrutura_com_cor(no, chave):
+    """(chave, 'V'/'P', esquerda, direita)."""
+    if no is None:
+        return None
+    return (chave(no.filmes[0]), "V" if no.cor == VERMELHO else "P",
+            estrutura_com_cor(no.esquerda, chave), estrutura_com_cor(no.direita, chave))
+
+
+class TestArvoreRubroNegra(unittest.TestCase):
+
+    def verificar_propriedades(self, arvore):
+        raiz = arvore.raiz
+        if raiz is None:
+            return
+        self.assertEqual(raiz.cor, PRETO, "propriedade 2: raiz tem que ser preta")
+        self.assertIsNone(raiz.pai)
+
+        def altura_negra(no):
+            """Confere as propriedades 1, 4 e 5 e os ponteiros pai.
+            Devolve o nº de nós pretos de no até as folhas (folha None conta 1,
+            propriedade 3)."""
+            if no is None:
+                return 1
+            self.assertIn(no.cor, (VERMELHO, PRETO), "propriedade 1")
+            for filho in (no.esquerda, no.direita):
+                if filho is not None:
+                    self.assertIs(filho.pai, no, "ponteiro pai errado")
+                    if no.cor == VERMELHO:
+                        self.assertEqual(filho.cor, PRETO,
+                                         "propriedade 4: nó vermelho com filho vermelho")
+            esquerda = altura_negra(no.esquerda)
+            direita = altura_negra(no.direita)
+            self.assertEqual(esquerda, direita, "propriedade 5: altura negra diferente")
+            return esquerda + (1 if no.cor == PRETO else 0)
+
+        altura_negra(raiz)
+
+    def verificar_arvore(self, arvore, filmes):
+        self.verificar_propriedades(arvore)
+        self.assertEqual(em_ordem(arvore.raiz, arvore.chave),
+                         sorted(set(arvore.chave(f) for f in filmes)),
+                         "percurso em ordem não está ordenado")
+        n = len(set(arvore.chave(f) for f in filmes))
+        self.assertLessEqual(arvore.altura(), 2 * math.log2(n + 1),
+                             "altura passou de 2 log(n + 1)")
+
+    # ------------- exemplo dos slides 19-22 -------------
+
+    def test_exemplo_dos_slides(self):
+        # essa ordem de inserção monta exatamente a árvore do slide 19
+        arvore = montar_arvore_rubro_negra(filmes_com_codigos([11, 2, 14, 1, 7, 15, 5, 8]))
+        chave = arvore.chave
+        self.assertEqual(
+            estrutura_com_cor(arvore.raiz, chave),
+            (11, "P",
+             (2, "V", (1, "P", None, None),
+                      (7, "P", (5, "V", None, None), (8, "V", None, None))),
+             (14, "P", None, (15, "V", None, None))),
+        )
+
+        # inserir 4 passa pelos casos 1 -> 2 -> 3 (slides 19, 20 e 21)
+        rotacoes_antes = arvore.rotacoes
+        arvore.inserir(filmes_com_codigos([4])[0])
+        self.assertEqual(arvore.rotacoes - rotacoes_antes, 2)
+
+        # árvore final do slide 22
+        self.assertEqual(
+            estrutura_com_cor(arvore.raiz, chave),
+            (7, "P",
+             (2, "V", (1, "P", None, None),
+                      (5, "P", (4, "V", None, None), None)),
+             (11, "V", (8, "P", None, None),
+                       (14, "P", None, (15, "V", None, None)))),
+        )
+        self.verificar_propriedades(arvore)
+
+    # ------------- casos de rotação isolados -------------
+
+    def test_caso3_rotacao_direita(self):
+        arvore = montar_arvore_rubro_negra(filmes_com_codigos([3, 2, 1]))
+        self.assertEqual(arvore.rotacoes, 1)
+        self.assertEqual(estrutura_com_cor(arvore.raiz, arvore.chave),
+                         (2, "P", (1, "V", None, None), (3, "V", None, None)))
+
+    def test_caso2_vira_caso3(self):
+        arvore = montar_arvore_rubro_negra(filmes_com_codigos([3, 1, 2]))
+        self.assertEqual(arvore.rotacoes, 2)
+        self.assertEqual(estrutura_com_cor(arvore.raiz, arvore.chave),
+                         (2, "P", (1, "V", None, None), (3, "V", None, None)))
+
+    def test_casos_espelhados(self):
+        for codigos in ([1, 2, 3], [1, 3, 2]):
+            with self.subTest(ordem=codigos):
+                arvore = montar_arvore_rubro_negra(filmes_com_codigos(codigos))
+                self.assertEqual(estrutura_com_cor(arvore.raiz, arvore.chave),
+                                 (2, "P", (1, "V", None, None), (3, "V", None, None)))
+
+    def test_caso1_so_recolore(self):
+        arvore = montar_arvore_rubro_negra(filmes_com_codigos([2, 1, 3]))
+        recoloracoes_antes = arvore.recoloracoes
+        arvore.inserir(filmes_com_codigos([4])[0])  # tio (1) vermelho
+        self.assertEqual(arvore.rotacoes, 0)
+        # 1 e 3 ficam pretos; 2 fica vermelho e volta a ser preto por ser a raiz
+        self.assertEqual(arvore.recoloracoes - recoloracoes_antes, 4)
+        self.assertEqual(estrutura_com_cor(arvore.raiz, arvore.chave),
+                         (2, "P", (1, "P", None, None),
+                          (3, "P", None, (4, "V", None, None))))
+
+    # ------------- propriedades -------------
+
+    def test_insercao_aleatoria_mantem_propriedades(self):
+        filmes = gerar_filmes(1000)
+        self.verificar_arvore(montar_arvore_rubro_negra(filmes), filmes)
+
+    def test_propriedades_valem_apos_cada_insercao(self):
+        arvore = ArvoreRubroNegra()
+        for filme in gerar_filmes(200, semente=7):
+            arvore.inserir(filme)
+            self.verificar_propriedades(arvore)
+
+    def test_insercao_ordenada_e_inversa_nao_degenera(self):
+        filmes = sorted(gerar_filmes(1000), key=lambda f: f.codigo)
+        for nome, entrada in (("ordenada", filmes), ("inversa", filmes[::-1])):
+            with self.subTest(cenario=nome):
+                arvore = montar_arvore_rubro_negra(entrada)
+                self.verificar_arvore(arvore, entrada)
+                self.assertGreater(arvore.rotacoes, 0)
+
+    def test_rotacoes_por_insercao_no_maximo_duas(self):
+        arvore = ArvoreRubroNegra()
+        for filme in gerar_filmes(500):
+            antes = arvore.rotacoes
+            arvore.inserir(filme)
+            self.assertLessEqual(arvore.rotacoes - antes, 2)
+
+    def test_conta_comparacoes_na_insercao(self):
+        arvore = montar_arvore_rubro_negra(filmes_com_codigos([2, 1, 3]))
+        self.assertEqual(arvore.comparacoes_insercao, 2)
+
+    def test_arvore_vazia(self):
+        arvore = ArvoreRubroNegra()
+        self.assertEqual(arvore.altura(), 0)
+        self.assertEqual(arvore.buscar(10), ([], 0))
+
+    # ------------- busca (herdada de ArvoreBusca) -------------
+
+    def test_busca_por_codigo(self):
+        filmes = gerar_filmes(500)
+        arvore = montar_arvore_rubro_negra(filmes)
+        for filme in filmes:
+            encontrados, comparacoes = arvore.buscar(filme.codigo)
+            self.assertEqual(encontrados, [filme])
+            self.assertLessEqual(comparacoes, arvore.altura())
+        self.assertEqual(arvore.buscar(-1)[0], [])
+
+    def test_chaves_repetidas_ficam_no_mesmo_no(self):
+        filmes = gerar_filmes(300)
+        arvore = montar_arvore_rubro_negra(filmes, chave=lambda f: f.ano)
+        self.verificar_arvore(arvore, filmes)
+        for ano in {f.ano for f in filmes}:
+            esperado = [f for f in filmes if f.ano == ano]
+            self.assertEqual(arvore.buscar(ano)[0], esperado)
+
+    def test_busca_por_trecho(self):
+        filmes = gerar_filmes(200)
+        arvore = montar_arvore_rubro_negra(filmes, chave=lambda f: f.titulo.casefold())
+        esperado = sorted((f for f in filmes if "filme 1" in f.titulo.casefold()),
+                          key=lambda f: f.titulo.casefold())
+        self.assertEqual(arvore.buscar_por_trecho("filme 1")[0], esperado)
 
 
 if __name__ == "__main__":
