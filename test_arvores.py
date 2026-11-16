@@ -10,7 +10,10 @@ from arvores import (
     montar_arvore_rubro_negra,
     VERMELHO,
     PRETO,
+    desenhar_arvore,
 )
+from buscas import ArvoreBusca
+import main
 
 
 def gerar_filmes(n, semente=42):
@@ -327,6 +330,71 @@ class TestArvoreRubroNegra(unittest.TestCase):
         esperado = sorted((f for f in filmes if "filme 1" in f.titulo.casefold()),
                           key=lambda f: f.titulo.casefold())
         self.assertEqual(arvore.buscar_por_trecho("filme 1")[0], esperado)
+
+
+class TestArvoreBinariaSemBalanceamento(unittest.TestCase):
+
+    def test_entrada_ordenada_degenera_sem_estourar_recursao(self):
+        # inserção e altura iterativas: 3000 > limite de recursão do Python
+        filmes = filmes_com_codigos(range(3000))
+        arvore = ArvoreBusca()
+        for filme in filmes:
+            arvore.inserir(filme)
+        self.assertEqual(arvore.altura(), 3000)  # virou uma "lista"
+        self.assertEqual(arvore.comparacoes_insercao, 3000 * 2999 // 2)
+        self.assertEqual(arvore.buscar(2999)[1], 3000)
+
+    def test_altura_vazia_e_balanceada(self):
+        arvore = ArvoreBusca()
+        self.assertEqual(arvore.altura(), 0)
+        for filme in filmes_com_codigos([4, 2, 6, 1, 3, 5, 7]):
+            arvore.inserir(filme)
+        self.assertEqual(arvore.altura(), 3)
+
+
+class TestDesenharArvore(unittest.TestCase):
+
+    def test_desenho_da_arvore_final_dos_slides(self):
+        arvore = montar_arvore_rubro_negra(
+            filmes_com_codigos([11, 2, 14, 1, 7, 15, 5, 8, 4]))
+        rotulo = lambda no: f"{no.filmes[0].codigo}{'V' if no.cor == VERMELHO else 'P'}"
+        self.assertEqual(desenhar_arvore(arvore, rotulo), [
+            "        ┌── 15V",
+            "    ┌── 14P",
+            "┌── 11V",
+            "│   └── 8P",
+            "7P",
+            "│   ┌── 5P",
+            "│   │   └── 4V",
+            "└── 2V",
+            "    └── 1P",
+        ])
+
+    def test_arvore_vazia(self):
+        self.assertEqual(desenhar_arvore(ArvoreAVL(), str), [])
+
+
+class TestIntegracaoMain(unittest.TestCase):
+
+    def test_todos_os_metodos_de_busca_encontram_o_mesmo(self):
+        filmes = gerar_filmes(300)
+        estruturas = main.montar_estruturas(filmes)
+        casos = [("1", filmes[10].codigo), ("1", -1),
+                 ("3", filmes[0].ano), ("2", "filme 2"), ("4", "drama")]
+        for campo_id, valor in casos:
+            campo = main.CAMPOS[campo_id]
+            esperado = None
+            for metodo_id in main.METODOS:
+                with self.subTest(campo=campo["nome"], valor=valor, metodo=metodo_id):
+                    encontrados, _ = main.executar_busca(metodo_id, campo, valor,
+                                                         filmes, estruturas)
+                    codigos = sorted(f.codigo for f in encontrados)
+                    if campo["modo"] == "contem":
+                        # busca por trecho para no limite: só confere quantidade
+                        codigos = len(codigos)
+                    if esperado is None:
+                        esperado = codigos
+                    self.assertEqual(codigos, esperado)
 
 
 if __name__ == "__main__":

@@ -96,24 +96,43 @@ class ArvoreBusca:
     def __init__(self, chave=lambda f: f.codigo):
         self.raiz = None
         self.chave = chave
+        self.comparacoes_insercao = 0
 
     def inserir(self, filme):
-        self.raiz = self._inserir(self.raiz, filme)
-
-    def _inserir(self, no, filme):
-        if no is None:
-            return NoArvore(filme)
-
-        chave_no = self.chave(no.filmes[0])
+        # iterativa: inserindo filmes já ordenados a árvore vira uma "lista"
+        # de altura n, e a versão recursiva estourava o limite de recursão
         chave_filme = self.chave(filme)
+        if self.raiz is None:
+            self.raiz = NoArvore(filme)
+            return
 
-        if chave_filme < chave_no:
-            no.esquerda = self._inserir(no.esquerda, filme)
-        elif chave_filme > chave_no:
-            no.direita = self._inserir(no.direita, filme)
-        else:
-            no.filmes.append(filme)
-        return no
+        no = self.raiz
+        while True:
+            self.comparacoes_insercao += 1
+            chave_no = self.chave(no.filmes[0])
+            if chave_filme < chave_no:
+                if no.esquerda is None:
+                    no.esquerda = NoArvore(filme)
+                    return
+                no = no.esquerda
+            elif chave_filme > chave_no:
+                if no.direita is None:
+                    no.direita = NoArvore(filme)
+                    return
+                no = no.direita
+            else:
+                no.filmes.append(filme)
+                return
+
+    def altura(self):
+        # percurso em largura, nível a nível (sem recursão, pelo mesmo motivo)
+        altura = 0
+        nivel = [self.raiz] if self.raiz is not None else []
+        while nivel:
+            altura += 1
+            nivel = [filho for no in nivel for filho in (no.esquerda, no.direita)
+                     if filho is not None]
+        return altura
 
     def buscar(self, valor):
         comparacoes = 0

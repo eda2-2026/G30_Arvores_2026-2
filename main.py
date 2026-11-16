@@ -1,3 +1,4 @@
+import math
 import time
 
 from filmes import carregar_filmes
@@ -5,9 +6,18 @@ from buscas import (
     busca_sequencial,
     busca_binaria,
     busca_interpolacao,
+    ArvoreBusca,
     montar_arvore_balanceada,
     TabelaHash,
     tamanho_recomendado_para_hash,
+)
+from arvores import (
+    ArvoreAVL,
+    ArvoreRubroNegra,
+    montar_arvore_avl,
+    montar_arvore_rubro_negra,
+    desenhar_arvore,
+    VERMELHO,
 )
 from ordenacoes import (
     selection_sort,
@@ -71,7 +81,12 @@ METODOS = {
     "3": "Busca por Interpolação",
     "4": "Busca em Árvore Binária",
     "5": "Busca por Hashing",
+    "6": "Busca em Árvore AVL",
+    "7": "Busca em Árvore Rubro-Negra",
 }
+
+# métodos de busca que usam uma árvore já montada em montar_estruturas
+ARVORES_DE_BUSCA = {"4": "arvore", "6": "avl", "7": "rubro_negra"}
 
 # "apenas_numerico": counting/radix indexam um vetor pelo valor da chave,
 # então só funcionam com chaves inteiras (código e ano).
@@ -104,9 +119,13 @@ def montar_estruturas(filmes):
         for filme in filmes:
             tabela_hash.inserir(filme)
 
+        # AVL e rubro-negra se balanceiam sozinhas: inserimos na ordem do CSV,
+        # sem precisar ordenar antes como na árvore binária acima
         estruturas[campo["id"]] = {
             "ordenados": ordenados,
             "arvore": arvore,
+            "avl": montar_arvore_avl(filmes, chave=chave),
+            "rubro_negra": montar_arvore_rubro_negra(filmes, chave=chave),
             "hash": tabela_hash,
         }
     return estruturas
@@ -122,8 +141,8 @@ def executar_busca(metodo_id, campo, valor, filmes, estruturas):
             return busca_sequencial(filmes, valor, chave=chave, modo="contem", limite=limite)
         if metodo_id in ("2", "3"):
             return busca_sequencial(dados["ordenados"], valor, chave=chave, modo="contem", limite=limite)
-        if metodo_id == "4":
-            return dados["arvore"].buscar_por_trecho(valor, limite=limite)
+        if metodo_id in ARVORES_DE_BUSCA:
+            return dados[ARVORES_DE_BUSCA[metodo_id]].buscar_por_trecho(valor, limite=limite)
         if metodo_id == "5":
             return dados["hash"].buscar_por_trecho(valor, limite=limite)
         raise ValueError(f"Método de busca desconhecido: {metodo_id}")
@@ -134,8 +153,8 @@ def executar_busca(metodo_id, campo, valor, filmes, estruturas):
         return busca_binaria(dados["ordenados"], valor, chave=chave)
     if metodo_id == "3":
         return busca_interpolacao(dados["ordenados"], valor, chave=chave)
-    if metodo_id == "4":
-        return dados["arvore"].buscar(valor)
+    if metodo_id in ARVORES_DE_BUSCA:
+        return dados[ARVORES_DE_BUSCA[metodo_id]].buscar(valor)
     if metodo_id == "5":
         return dados["hash"].buscar(valor)
     raise ValueError(f"Método de busca desconhecido: {metodo_id}")
@@ -165,7 +184,7 @@ LIMITE_RESULTADOS_EXIBIDOS = 20
 
 def buscar_no_submenu(metodo_id, metodo_nome, campo, filmes, estruturas):
     print(f"\n--- {metodo_nome} | Campo: {campo['nome']} ---")
-    print(f"({len(filmes)} filmes no catálogo -- use a opção 6 do menu principal pra ver a lista completa)\n")
+    print(f"({len(filmes)} filmes no catálogo -- use a opção 8 do menu principal pra ver a lista completa)\n")
 
     while True:
         valor = ler_valor_busca(campo)
@@ -195,7 +214,7 @@ def comparar_metodos(filmes, estruturas):
 
     print("\n--- Comparativo de desempenho (busca por código) ---")
     print(f"{len(codigos_existentes)} buscas bem-sucedidas (uma por filme do catálogo)\n")
-    cabecalho = (f"{'Método':<26}{'Melhor':>8}{'Pior':>8}{'Médio':>10}"
+    cabecalho = (f"{'Método':<30}{'Melhor':>8}{'Pior':>8}{'Médio':>10}"
                  f"{'Malsucedida':>13}{'Tempo total (ms)':>18}")
     print(cabecalho)
     print("-" * len(cabecalho))
@@ -215,7 +234,7 @@ def comparar_metodos(filmes, estruturas):
         media = sum(comparacoes_lista) / len(comparacoes_lista)
         tempo_total_ms = (fim - inicio) * 1000
 
-        print(f"{nome:<26}{melhor:>8}{pior:>8}{media:>10.2f}"
+        print(f"{nome:<30}{melhor:>8}{pior:>8}{media:>10.2f}"
               f"{comparacoes_ausente:>13}{tempo_total_ms:>18.4f}")
     print()
 
@@ -334,20 +353,154 @@ def comparar_ordenacoes(filmes):
     print()
 
 
+TIPOS_DE_ARVORE = {
+    "1": {"nome": "Binária (sem balanceamento)", "classe": ArvoreBusca},
+    "2": {"nome": "AVL", "classe": ArvoreAVL},
+    "3": {"nome": "Rubro-Negra", "classe": ArvoreRubroNegra},
+}
+
+
+def construir_arvore(classe, filmes, chave):
+    arvore = classe(chave=chave)
+    inicio = time.perf_counter()
+    for filme in filmes:
+        arvore.inserir(filme)
+    fim = time.perf_counter()
+    return arvore, (fim - inicio) * 1000
+
+
+def comparar_arvores(filmes):
+    campo = CAMPOS["1"]  # código: chave única, cada filme vira um nó
+    chave = campo["chave"]
+
+    print("\n--- Comparativo entre árvores (inserção por código) ---")
+    print("(a árvore binária sem balanceamento fica lenta com entrada já ordenada)")
+    n = ler_tamanho_amostra(len(filmes))
+
+    amostra = filmes[:n]
+    crescente, _, _ = heap_sort(amostra, chave=chave)
+    cenarios = {
+        "Ordem original do CSV": amostra,
+        "Já ordenado": crescente,
+        "Ordem inversa": crescente[::-1],
+    }
+
+    print(f"\nAltura mínima possível: {math.ceil(math.log2(n + 1))} | "
+          f"limite AVL: {1.44 * math.log2(n + 2):.1f} | "
+          f"limite Rubro-Negra: {2 * math.log2(n + 1):.1f}")
+
+    for nome_cenario, entrada in cenarios.items():
+        print(f"\n>> Cenário: {nome_cenario} | {n} filmes | chave: {campo['nome']}")
+        cabecalho = (f"{'Árvore':<29}{'Altura':>8}{'Comp. inserção':>16}{'Rotações':>10}"
+                     f"{'Recolorações':>14}{'Busca média':>13}{'Tempo (ms)':>12}")
+        print(cabecalho)
+        print("-" * len(cabecalho))
+        for tipo in TIPOS_DE_ARVORE.values():
+            arvore, tempo_ms = construir_arvore(tipo["classe"], entrada, chave)
+            # média de comparações de uma busca bem-sucedida por cada filme
+            total_busca = sum(arvore.buscar(chave(f))[1] for f in entrada)
+            rotacoes = getattr(arvore, "rotacoes", "-")
+            recoloracoes = getattr(arvore, "recoloracoes", "-")
+            print(f"{tipo['nome']:<29}{arvore.altura():>8}{arvore.comparacoes_insercao:>16}"
+                  f"{rotacoes:>10}{recoloracoes:>14}{total_busca / n:>13.2f}{tempo_ms:>12.2f}")
+    print()
+
+
+LIMITE_VISUALIZACAO = 31  # mais que isso não cabe direito no terminal
+
+
+def rotulo_do_no(arvore):
+    def rotulo(no):
+        filme = no.filmes[0]
+        texto = f"{filme.codigo} {filme.titulo[:22]}"
+        if isinstance(arvore, ArvoreAVL):
+            return f"{texto} (FB={arvore.fator_balanceamento(no):+d})"
+        if isinstance(arvore, ArvoreRubroNegra):
+            return f"{texto} [{'V' if no.cor == VERMELHO else 'P'}]"
+        return texto
+    return rotulo
+
+
+def ler_inteiro(mensagem, minimo, maximo, padrao):
+    while True:
+        entrada = input(f"{mensagem} ({minimo} a {maximo}, Enter = {padrao}): ").strip()
+        if entrada == "":
+            return padrao
+        if entrada.isdigit() and minimo <= int(entrada) <= maximo:
+            return int(entrada)
+        print("Valor inválido.\n")
+
+
+def mostrar_arvore(arvore):
+    for linha in desenhar_arvore(arvore, rotulo_do_no(arvore)):
+        print("  " + linha)
+    extras = ""
+    if hasattr(arvore, "rotacoes"):
+        extras += f" | Rotações: {arvore.rotacoes}"
+    if hasattr(arvore, "recoloracoes"):
+        extras += f" | Recolorações: {arvore.recoloracoes}"
+    print(f"Altura: {arvore.altura()} | Comparações na inserção: "
+          f"{arvore.comparacoes_insercao}{extras}\n")
+
+
+def visualizar_arvore(filmes):
+    chave = CAMPOS["1"]["chave"]
+    while True:
+        print("\n--- Visualizar árvore: qual tipo? ---")
+        for chave_menu, tipo in TIPOS_DE_ARVORE.items():
+            print(f"{chave_menu} - {tipo['nome']}")
+        print("0 - Voltar ao menu principal")
+
+        escolha = input("Escolha uma opção: ").strip()
+        if escolha == "0":
+            return
+        if escolha not in TIPOS_DE_ARVORE:
+            print("Opção inválida!\n")
+            continue
+        tipo = TIPOS_DE_ARVORE[escolha]
+
+        n = ler_inteiro("Quantos filmes inserir?", 1, LIMITE_VISUALIZACAO, 15)
+        ordenar = input("Inserir já ordenado por código? (s/N): ").strip().lower() == "s"
+        passo_a_passo = input("Mostrar passo a passo? (s/N): ").strip().lower() == "s"
+
+        entrada = filmes[:n]
+        if ordenar:
+            entrada, _, _ = heap_sort(entrada, chave=chave)
+
+        print(f"\n--- Árvore {tipo['nome']} | {n} filmes | chave: código ---")
+        print("(deitada: a raiz fica à esquerda, a subárvore direita aparece em cima)")
+        if tipo["classe"] is ArvoreAVL:
+            print("FB = altura(direita) - altura(esquerda)")
+        elif tipo["classe"] is ArvoreRubroNegra:
+            print("[V] = vermelho | [P] = preto")
+
+        arvore = tipo["classe"](chave=chave)
+        for i, filme in enumerate(entrada, 1):
+            arvore.inserir(filme)
+            if passo_a_passo and i < len(entrada):
+                print(f"\n> Inseriu {filme.codigo} ({i}/{len(entrada)}):")
+                mostrar_arvore(arvore)
+                input("Enter para inserir o próximo...")
+        print(f"\n> Árvore final ({len(entrada)} filmes):")
+        mostrar_arvore(arvore)
+
+
 def menu_principal():
     filmes = carregar_filmes()
     estruturas = montar_estruturas(filmes)
 
     while True:
         print("=================================================")
-        print("   CATÁLOGO DE FILMES - BUSCA E ORDENAÇÃO        ")
+        print("  CATÁLOGO DE FILMES - BUSCA, ORDENAÇÃO E ÁRVORES ")
         print("=================================================")
         for chave_menu, nome in METODOS.items():
             print(f"{chave_menu} - {nome}")
-        print("6 - Listar catálogo")
-        print("7 - Comparar desempenho dos métodos")
-        print("8 - Ordenar catálogo")
-        print("9 - Comparar desempenho dos algoritmos de ordenação")
+        print("8 - Listar catálogo")
+        print("9 - Comparar desempenho dos métodos de busca")
+        print("10 - Ordenar catálogo")
+        print("11 - Comparar desempenho dos algoritmos de ordenação")
+        print("12 - Comparar árvores (binária x AVL x rubro-negra)")
+        print("13 - Visualizar árvore")
         print("0 - Sair")
 
         escolha = input("Escolha uma opção: ").strip()
@@ -355,14 +508,18 @@ def menu_principal():
         if escolha == "0":
             print("Encerrando...")
             break
-        elif escolha == "6":
-            listar_catalogo(filmes)
-        elif escolha == "7":
-            comparar_metodos(filmes, estruturas)
         elif escolha == "8":
-            menu_ordenacao(filmes)
+            listar_catalogo(filmes)
         elif escolha == "9":
+            comparar_metodos(filmes, estruturas)
+        elif escolha == "10":
+            menu_ordenacao(filmes)
+        elif escolha == "11":
             comparar_ordenacoes(filmes)
+        elif escolha == "12":
+            comparar_arvores(filmes)
+        elif escolha == "13":
+            visualizar_arvore(filmes)
         elif escolha in METODOS:
             menu_campo(escolha, METODOS[escolha], filmes, estruturas)
         else:

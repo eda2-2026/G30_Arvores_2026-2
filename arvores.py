@@ -26,8 +26,7 @@ class ArvoreAVL(ArvoreBusca):
     """
 
     def __init__(self, chave=lambda f: f.codigo):
-        super().__init__(chave=chave)
-        self.comparacoes_insercao = 0
+        super().__init__(chave=chave)  # já cria raiz, chave e comparacoes_insercao
         self.rotacoes = 0
 
     def altura(self):
@@ -137,12 +136,6 @@ def _cor(no):
     return no.cor if no is not None else PRETO
 
 
-def _altura_recursiva(no):
-    if no is None:
-        return 0
-    return 1 + max(_altura_recursiva(no.esquerda), _altura_recursiva(no.direita))
-
-
 class ArvoreRubroNegra(ArvoreBusca):
     """Árvore rubro-negra (Cormen et al., cap. 13).
 
@@ -159,13 +152,11 @@ class ArvoreRubroNegra(ArvoreBusca):
     """
 
     def __init__(self, chave=lambda f: f.codigo):
-        super().__init__(chave=chave)
-        self.comparacoes_insercao = 0
+        super().__init__(chave=chave)  # já cria raiz, chave e comparacoes_insercao
         self.rotacoes = 0
         self.recoloracoes = 0
 
-    def altura(self):
-        return _altura_recursiva(self.raiz)
+    # altura() é herdada de ArvoreBusca
 
     def _pintar(self, no, cor):
         if no.cor != cor:
@@ -255,7 +246,6 @@ class ArvoreRubroNegra(ArvoreBusca):
                     self._pintar(z.pai.pai, VERMELHO)
                     self._right_rotate(z.pai.pai)
             else:
-                # espelho: troca esquerda <-> direita
                 y = avo.esquerda
                 if _cor(y) == VERMELHO:
                     self._pintar(z.pai, PRETO)
@@ -278,3 +268,27 @@ def montar_arvore_rubro_negra(filmes, chave=lambda f: f.codigo):
     for filme in filmes:
         arvore.inserir(filme)
     return arvore
+
+
+def desenhar_arvore(arvore, rotulo):
+    """Desenha a árvore "deitada": a raiz fica à esquerda, a subárvore
+    direita aparece acima do nó e a esquerda abaixo.
+
+    rotulo(no) -> texto mostrado para cada nó. Devolve a lista de linhas.
+    """
+    linhas = []
+    conectores = {None: "", "dir": "┌── ", "esq": "└── "}
+
+    def visitar(no, prefixo, lado):
+        if no is None:
+            return
+        # a barra "│" liga o nó ao irmão que fica do outro lado dele;
+        # os filhos da raiz começam na mesma coluna que ela
+        acima = "" if lado is None else ("│   " if lado == "esq" else "    ")
+        abaixo = "" if lado is None else ("│   " if lado == "dir" else "    ")
+        visitar(no.direita, prefixo + acima, "dir")
+        linhas.append(prefixo + conectores[lado] + rotulo(no))
+        visitar(no.esquerda, prefixo + abaixo, "esq")
+
+    visitar(arvore.raiz, "", None)
+    return linhas
