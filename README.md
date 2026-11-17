@@ -16,8 +16,24 @@ Nesta etapa entram as **árvores binárias de busca balanceadas**. No trabalho a
 
 ## Screenshots
 
+
+### Árvore Rubro-Negra - Passo a passo
+
+![rn-passo](./assets/rn-passo.png)
+
+
+### AVL - Passo a passo
+
+![avl-passo](./assets/avl-passos.png)
+
+
+### Comparação de desempenho entre árvores
+
+![comparacao-arvores](./assets/comparacao-arvores.png)
+
+
 ## Video
-(a gravar)
+https://youtu.be/nAPgCc6IuIc
 
 ## Instalação
 Linguagem: Python 3 (sem bibliotecas externas)<br>
